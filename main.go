@@ -76,6 +76,7 @@ func main() {
 			canvasWidth = width
 			canvasHeight = height
 			parseMarkdown(text)
+			render() // Render after resize
 			return nil
 		})
 		resizeCanvas.Invoke()
@@ -90,6 +91,7 @@ func main() {
 			canvasWidth = width
 			canvasHeight = height
 			parseMarkdown(text)
+			render() // Render after resize
 			return nil
 		}))
 
@@ -113,6 +115,7 @@ func main() {
 				}
 				
 				parseMarkdown(text)
+				render() // Render after zoom
 			} else {
 				// Regular scroll
 				deltaY := event.Get("deltaY").Float()
@@ -129,19 +132,12 @@ func main() {
 				if scrollY > maxScroll {
 					scrollY = maxScroll
 				}
+				
+				render() // Render after scroll
 			}
 			
 			return nil
 		}), map[string]interface{}{"passive": false})
-
-		// Start animation
-		var animate js.Func
-		animate = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			render()
-			js.Global().Call("requestAnimationFrame", animate)
-			return nil
-		})
-		js.Global().Call("requestAnimationFrame", animate)
 		
 		return nil
 	})
