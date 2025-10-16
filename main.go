@@ -16,6 +16,7 @@ var (
 	contentHeight int
 	loadedImages map[string]js.Value
 	markdownText string
+	dpr          float64
 )
 
 type ElementType int
@@ -69,8 +70,8 @@ func main() {
 		}
 		canvas {
 			display: block;
-			width: 100vw;
-			height: 100vh;
+			image-rendering: -webkit-optimize-contrast;
+			image-rendering: crisp-edges;
 		}
 	`)
 	document.Get("head").Call("appendChild", style)
@@ -87,13 +88,36 @@ func main() {
 		text := args[0].String()
 		markdownText = text
 		
+		// Get device pixel ratio for sharp rendering
+		dpr = window.Get("devicePixelRatio").Float()
+		if dpr < 1 {
+			dpr = 1
+		}
+		
 		resizeCanvas := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 			width := window.Get("innerWidth").Int()
 			height := window.Get("innerHeight").Int()
-			canvas.Set("width", width)
-			canvas.Set("height", height)
+			
+			// Set display size (CSS pixels)
+			canvas.Get("style").Set("width", intToString(width)+"px")
+			canvas.Get("style").Set("height", intToString(height)+"px")
+			
+			// Set actual size in memory (scaled for DPI)
+			canvas.Set("width", int(float64(width)*dpr))
+			canvas.Set("height", int(float64(height)*dpr))
+			
+			// Scale context to match
+			ctx.Call("scale", dpr, dpr)
+			
+			// Store logical dimensions
 			canvasWidth = width
 			canvasHeight = height
+			
+			// Enable sharp text rendering
+			ctx.Set("imageSmoothingEnabled", false)
+			ctx.Set("fontSmooth", "never")
+			ctx.Set("textRendering", "geometricPrecision")
+			
 			parseMarkdown(markdownText)
 			render()
 			return nil
@@ -104,10 +128,25 @@ func main() {
 		window.Call("addEventListener", "resize", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 			width := window.Get("innerWidth").Int()
 			height := window.Get("innerHeight").Int()
-			canvas.Set("width", width)
-			canvas.Set("height", height)
+			
+			// Set display size (CSS pixels)
+			canvas.Get("style").Set("width", intToString(width)+"px")
+			canvas.Get("style").Set("height", intToString(height)+"px")
+			
+			// Set actual size in memory (scaled for DPI)
+			canvas.Set("width", int(float64(width)*dpr))
+			canvas.Set("height", int(float64(height)*dpr))
+			
+			// Scale context to match
+			ctx.Call("scale", dpr, dpr)
+			
+			// Store logical dimensions
 			canvasWidth = width
 			canvasHeight = height
+			
+			// Enable sharp text rendering
+			ctx.Set("imageSmoothingEnabled", false)
+			
 			parseMarkdown(markdownText)
 			render()
 			return nil
@@ -481,9 +520,15 @@ func addWrappedText(text string, fontSize, x, y, maxWidth int, color string, isB
 }
 
 func render() {
+	// Disable smoothing for sharp rendering
+	ctx.Set("imageSmoothingEnabled", false)
+	
 	// Background
 	ctx.Set("fillStyle", "#fafafa")
 	ctx.Call("fillRect", 0, 0, canvasWidth, canvasHeight)
+	
+	// Re-enable font smoothing settings
+	ctx.Set("textRendering", "optimizeLegibility")
 	
 	for _, elem := range elements {
 		adjustedY := elem.y - int(scrollY)
@@ -511,12 +556,19 @@ func drawImage(elem Element, y int) {
 		return
 	}
 	
+	// Temporarily enable smoothing for images
+	ctx.Set("imageSmoothingEnabled", true)
+	ctx.Set("imageSmoothingQuality", "high")
+	
 	ctx.Set("shadowColor", "rgba(0, 0, 0, 0.1)")
 	ctx.Set("shadowBlur", 20)
 	ctx.Set("shadowOffsetY", 4)
 	ctx.Call("drawImage", elem.imageObj, elem.x, y, elem.imgWidth, elem.imgHeight)
 	ctx.Set("shadowBlur", 0)
 	ctx.Set("shadowOffsetY", 0)
+	
+	// Disable smoothing again for text
+	ctx.Set("imageSmoothingEnabled", false)
 }
 
 func drawDivider(elem Element, y int) {
@@ -569,7 +621,15 @@ func drawText(elem Element, y int) {
 	ctx.Set("fillStyle", elem.color)
 	ctx.Set("textAlign", "left")
 	ctx.Set("textBaseline", "top")
-	ctx.Call("fillText", elem.text, elem.x, y)
+	
+	// Round to nearest pixel for sharpest rendering
+	x := float64(elem.x)
+	yPos := float64(y)
+	
+	// Enable subpixel antialiasing
+	ctx.Set("textRendering", "optimizeLegibility")
+	
+	ctx.Call("fillText", elem.text, x, yPos)
 }
 
 func intToString(i int) string {
